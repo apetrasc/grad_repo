@@ -130,7 +130,6 @@ def update(num,v, xdata, ydata, line):
 
     return line,
 
-#ax.set_aspect('equal')
 line, = ax1.plot([0], [0], 'ro', markersize=1)
 
 ani = animation.FuncAnimation(fig1, update, frames=range(100), fargs=[v, xdata, ydata, line], 
