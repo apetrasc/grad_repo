@@ -34,7 +34,6 @@ class StudentTLikelihood(gpytorch.likelihoods.Likelihood):
 
     def forward(self, function_samples, **kwargs):
         return torch.distributions.StudentT(df=self.deg_free, loc=function_samples, scale=self.scale)
-
 class CoordinateTransform:#座標変換のクラス
     def __init__(self, car_x=0, car_y=0, car_theta=0):
         self.car_x = car_x
@@ -58,7 +57,7 @@ class CoordinateTransform:#座標変換のクラス
         self.car_y = car_y
         self.car_theta = car_theta       
    
-class GPModelManager:
+class DataManager:
     def __init__(self, seed, prob_mask, noise_stddev=0.01):
         self.seed = seed
         self.prob_mask = prob_mask
@@ -124,34 +123,12 @@ class GPModelManager:
         #train_y = self.remove_lowp_data(train_y)
         train =torch.stack((train_x, train_y), dim=1)
         return train
-    def prepare_data_gpy(self, x, y, car_x, car_y, car_angle, max_distance=6, min_angle=0, max_angle=np.pi):
-        percentage=0.1
-        filtered_x_raw, filtered_y_raw = self.filter_data_based_on_distance_and_angle(x, y, car_x, car_y, car_angle, max_distance, min_angle, max_angle)
-        transformer = CoordinateTransform(car_x, car_y, car_angle)
-        filtered_x, filtered_y = transformer.to_car_frame(filtered_x_raw,filtered_y_raw)
-        filtered_x = torch.tensor(filtered_x, dtype=torch.float32)
-        filtered_y = torch.tensor(filtered_y, dtype=torch.float32)
-        if not isinstance(filtered_x, torch.Tensor):
-            raise TypeError('filtered_x must be a torch.Tensor')
-        noisy_y = filtered_y + torch.randn(filtered_x.size()) * np.sqrt(0.001)
-        train_x = self._mask_data_with_seed(filtered_x)
-        train_y = self._mask_data_with_seed(noisy_y)
-        #train_y[np.random.choice(train_y.size(0), int(percentage * train_y.size(0)), replace=False)] *=-1
-        #train_y = self.remove_lowp_data(train_y)
-        return train_x, train_y
 
     def _mask_data_with_seed(self, data):
         torch.manual_seed(self.seed)
         mask = torch.rand(len(data)) < self.prob_mask
         return data[mask]
 
-    def create_gp_model(self, train_x, train_y):
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        return ExactGPModel(train_x, train_y, likelihood), likelihood
-    
-    def create_st_model(self, train_x, train_y):
-        likelihood = StudentTLikelihood(deg_free=10000, scale=0.8)
-        return StudentTGPModel(train_x), likelihood
 
 class MyModel:
     def __init__(self, model_l, model_r, likelihood_l, likelihood_r):
@@ -167,7 +144,22 @@ class MyModel:
         mu_r = self.likelihood_r(self.model_r(input_tensor)).mean[-1].item()
         sigma_r = self.likelihood_r(self.model_r(input_tensor)).variance[-1].item()
         return (mu_l, sigma_l), (mu_r, sigma_r)
-    
+
+    '''
+    model_l_GPy = GPy.models.TPRegression(train_l[:,0].numpy().reshape(-1, 1), train_l[:,1].numpy().reshape(-1, 1), kernel_simple, deg_free=2)
+    model_r_GPy = GPy.models.TPRegression(train_r[:,0].numpy().reshape(-1, 1), train_r[:,1].numpy().reshape(-1, 1), kernel_simple, deg_free=100)
+    #model_l_GPy = GPy.models.GPRegression(train_l[:1].numpy().reshape(-1, 1), train_l[1:].numpy().reshape(-1, 1), kernel_simple)
+    #model_r_GPy = GPy.models.GPRegression(train_r[:1].numpy().reshape(-1, 1), train_r[1:].numpy().reshape(-1, 1), kernel_simple)
+    model_l_GPy.optimize()
+    model_r_GPy.optimize()
+    test_x = np.linspace(-2, 2, 50).reshape(-1, 1)
+    mean_l_Gpy, var_l_GPy = model_l_GPy.predict(test_x)
+    mean_r_Gpy, var_r_GPy = model_r_GPy.predict(test_x)
+    test=np.stack((np.vstack((test_x, mean_l_Gpy)).T,np.vstack((test_x, mean_r_Gpy)).T))
+    Xnew = np.array([[3*v * dt*0.001]])
+    mu_l_Gpy,_=model_l_GPy.predict(Xnew)
+    mu_r_Gpy,_=model_r_GPy.predict(Xnew)
+    '''
 kernel_simple = GPy.kern.Linear(input_dim=1) +GPy.kern.Bias(input_dim=1)
 kernel_rbf = GPy.kern.RBF(input_dim=1, ARD=True)
 kernel_mat = GPy.kern.Matern52(1)

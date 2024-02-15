@@ -12,8 +12,10 @@ from scipy.stats import norm
 import GPy
 import time
 #以下はライブラリではなく、同じディレクトリのファイルからのインポート
-from drive_course_2 import course_l, course_r 
-from ai_engine import ExactGPModel, GPModelManager, MyModel, kernel_simple
+from drive_course_2 import course 
+from ai_engine import ExactGPModel, DataManager, kernel_simple
+from measure import Measurement
+from gp_utils import GPUtils
 class CoordinateTransform:#座標変換のクラス
     def __init__(self, car_x=0, car_y=0, car_theta=0):
         self.car_x = car_x
@@ -38,18 +40,7 @@ class CoordinateTransform:#座標変換のクラス
         self.car_x = car_x
         self.car_y = car_y
         self.car_theta = car_theta       
-def calculate_centerline(left_y, right_y):
-    return (left_y + right_y) / 2
-def calculate_distance_from_center(car_y, centerline_y):
-    return abs(car_y - centerline_y)
-def evaluate_trajectory(car_trajectory, left_trajectory, right_trajectory):
-    centerline_trajectory = calculate_centerline(left_trajectory, right_trajectory)
-    total_distance = 0
-    for car_y, center_y in zip(car_trajectory, centerline_trajectory):
-        total_distance += calculate_distance_from_center(car_y, center_y)
-    return total_distance / len(car_trajectory)
-def cal_dev(v, dt, omega):
-    return abs(v * dt*0.001 * np.tan(omega * dt*0.001))
+
 def plot_course(ax, course, color, label):
     ax.plot(course[0,:,0], course[0,:,1], color, label=label)
     ax.plot(course[1,:,0], course[1,:,1], color) 
@@ -62,18 +53,18 @@ def plot_regression_function(transformer,ax, test,color,label):
     print("gl",test_global_l.shape)
     ax.plot(test_global_l[:,0], test_global_l[:,1], color=color,label=label)
     ax.plot(test_global_r[:,0], test_global_r[:,1], color=color)
-    
+
+
 k_v = 0.01
 v_0 = 0
-omega_0 = 0
 ax1 = None
-dt = 500
+dt = 300
 fig1, ax1 = plt.subplots()
 #fig2, ax2 = plt.subplots()
 K_v = [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 2.0]
 K = ['0', '0.1', '0.2', '0.4','0.6', '0.8', '1.0', '2.0']
 seed = 42 
-v = v_0 +0.2
+v = v_0 +1.0
 cum_dev = 0
 omega = 0 #初期の角速度
 theta = -math.pi/4  # 注、弧度法
@@ -81,54 +72,48 @@ xdata, ydata = [-7], [7]  #初期値
 square_size=0.8 #車を模した長方形のサイズ
 prob_mask =0.053 #残るデータの割合
 spec = 2.8 #Lidarセンサの測定可能距離
-course = np.stack((course_l, course_r))
-transformer = CoordinateTransform(car_x=0, car_y=0, car_theta=0)
+#transformer = CoordinateTransform(car_x=0, car_y=0, car_theta=0)
 def init():
     line.set_data([0], [0])
     return line,
 # アニメーションを更新する関数
 def update(num,v, xdata, ydata, line):
-    global theta,dt,seed,prob_mask,cum_dev,ax1,transformer
+    global theta,dt,seed,prob_mask,cum_dev,ax1,transformer,omega
     ax1.clear()
     ax1.set_xlim(-10, 15)
     ax1.set_ylim(-10, 15)
     ax1.set_xlabel('x')
     ax1.set_ylabel('y')
-    manager = GPModelManager(seed, prob_mask)
+    manager = DataManager(seed, prob_mask)
     transformer = CoordinateTransform(car_x=xdata[-1], car_y=ydata[-1], car_theta=theta)
+    gp_utils = GPUtils()
     plot_course(ax1, course, color='b', label='Course')
    
-    train_l = manager.prepare_data(course_l,xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=np.pi/8, max_angle=np.pi*7/8)
-    train_r = manager.prepare_data(course_r,xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=-np.pi*7/8, max_angle=-np.pi/8)
+    train_l = manager.prepare_data(course[0,:,:],xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=np.pi/8, max_angle=np.pi*7/8)
+    train_r = manager.prepare_data(course[1,:,:],xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=-np.pi*7/8, max_angle=-np.pi/8)
     train_l_global = transformer.to_global_frame(train_l)
     train_r_global = transformer.to_global_frame(train_r)
     ax1.plot(train_l_global[:, 0], train_l_global[:, 1], 'y*',label='train data (left)')
     ax1.plot(train_r_global[:, 0], train_r_global[:, 1], 'r*',label='train data (right)')
-    '''
-    model_l_GPy = GPy.models.TPRegression(train_l[:,0].numpy().reshape(-1, 1), train_l[:,1].numpy().reshape(-1, 1), kernel_simple, deg_free=2)
-    model_r_GPy = GPy.models.TPRegression(train_r[:,0].numpy().reshape(-1, 1), train_r[:,1].numpy().reshape(-1, 1), kernel_simple, deg_free=100)
-    #model_l_GPy = GPy.models.GPRegression(train_l[:1].numpy().reshape(-1, 1), train_l[1:].numpy().reshape(-1, 1), kernel_simple)
-    #model_r_GPy = GPy.models.GPRegression(train_r[:1].numpy().reshape(-1, 1), train_r[1:].numpy().reshape(-1, 1), kernel_simple)
-    model_l_GPy.optimize()
-    model_r_GPy.optimize()
-    test_x = np.linspace(-2, 2, 50).reshape(-1, 1)
-    mean_l_Gpy, var_l_GPy = model_l_GPy.predict(test_x)
-    mean_r_Gpy, var_r_GPy = model_r_GPy.predict(test_x)
-    test=np.stack((np.vstack((test_x, mean_l_Gpy)).T,np.vstack((test_x, mean_r_Gpy)).T))
-    Xnew = np.array([[3*v * dt*0.001]])
-    mu_l_Gpy,_=model_l_GPy.predict(Xnew)
-    mu_r_Gpy,_=model_r_GPy.predict(Xnew)
-    '''
+    
+    model_l, likelihood_l = gp_utils.train_model(train_l[:,0], train_l[:,1]) #Gaussian Process による学習、推論を行う場所
+    model_r, likelihood_r = gp_utils.train_model(train_r[:,0], train_r[:,1])
+    gp_utils.set_eval_mode(model_l, likelihood_l, model_r, likelihood_r)
+    test_x = torch.tensor([[v*dt*0.001]])
+    mu_l, sigma_l = gp_utils.predict_with_model(model_l, likelihood_l, test_x)
+    mu_r, sigma_r = gp_utils.predict_with_model(model_r, likelihood_r, test_x)
+    
     v_x = v * np.cos(theta)
     v_y = v * np.sin(theta)
-    next_x = xdata[-1] + v_x
-    next_y = ydata[-1] + v_y
+    next_x = xdata[-1] + v_x*dt*0.001
+    next_y = ydata[-1] + v_y*dt*0.001
     xdata.append(next_x)
     ydata.append(next_y)
     line.set_data(xdata, ydata)
     for rect in ax1.patches:
         rect.remove()
-    #omega = (1/(dt*0.001))* math.atan((mu_l_Gpy+mu_r_Gpy)/(2*v*dt*0.001))
+    omega = (1/(dt*0.001))* math.atan((mu_l+mu_r)/(2*v*dt*0.001))
+    print(omega)
     theta += omega*dt*0.001
     Affine2D().translate(-xdata[-1], -ydata[-1]).rotate(-theta) # 車中心の座標系に変換
     rot_trans = Affine2D().rotate_deg_around(next_x, next_y, theta+math.degrees(np.pi/4)) #長方形が車の正面に相当するように、表示を少しずらしている
@@ -140,7 +125,7 @@ def update(num,v, xdata, ydata, line):
     ax1.plot(xdata, ydata, 'k', label='trajectory')
     #plot_regression_function(transformer,ax1, test,color='g',label='regression')
     ax1.legend()
-    cum_dev += cal_dev(v, dt, omega)
+    cum_dev += Measurement.cal_dev(v, dt, omega)
     #print("Average deviation from center:", cum_dev)
 
     return line,
