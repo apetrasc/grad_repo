@@ -46,16 +46,18 @@ class CoordinateTransform:#座標変換のクラス
         transformed_points = transform.transform(np.column_stack((points_x, points_y)))
         return transformed_points[:, 0], transformed_points[:, 1]
 
-    def to_global_frame(self, points_x, points_y):
-        transform = Affine2D()
+    def to_global_frame(self, points):
+        transform = Affine2D() #points input is torch, outcome is numpy
+        points_x=points[:,0]
+        points_y=points[:,1]
         transform.rotate(self.car_theta).translate(self.car_x, self.car_y)
         transformed_points = transform.transform(np.column_stack((points_x, points_y)))
-        return transformed_points[:, 0], transformed_points[:, 1]
+        return torch.tensor(transformed_points)
 
     def update_car_position(self, car_x, car_y, car_theta):
         self.car_x = car_x
         self.car_y = car_y
-        self.car_theta = car_theta       
+        self.car_theta = car_theta         
    
 class DataManager:
     def __init__(self, seed, prob_mask, noise_stddev=0.01):
