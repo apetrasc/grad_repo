@@ -25,9 +25,8 @@ course_r_y = np.hstack((y_r_0,y_r_1,y_r_2))
 course_l = np.vstack((course_l_x, course_l_y)).T
 course_r = np.vstack((course_r_x, course_r_y)).T
 
-course_l_x_revised = course_l[:, 0]
 course = np.stack((course_l, course_r))
-course_l_reconstructed = course[0,:, :]
+
 
 '''
 print(course.shape)

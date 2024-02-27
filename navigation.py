@@ -15,6 +15,7 @@ from drive_course_2 import course
 from ai_engine import DataManager, CoordinateTransform
 from measure import Measurement
 from gp_utils import GPUtils
+from tp_utils import TPUtils
 
 def plot_course(ax, course, color, label):
     ax.plot(course[0,:,0], course[0,:,1], color, label=label)
@@ -64,13 +65,14 @@ def update(num,v, xdata, ydata, line):
     manager = DataManager(seed, prob_mask)
     transformer = CoordinateTransform(car_x=xdata[-1], car_y=ydata[-1], car_theta=theta)
     gp_utils = GPUtils()
+    tp_utils = TPUtils()
     plot_course(ax1, course, color='b', label='Course')
    
     train_l = manager.prepare_data(course[0,:,:],xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=np.pi/8, max_angle=np.pi*7/8)
     train_r = manager.prepare_data(course[1,:,:],xdata[-1],ydata[-1],theta,max_distance=spec, min_angle=-np.pi*7/8, max_angle=-np.pi/8)
     model_l, likelihood_l = gp_utils.train_model(train_l[:,0], train_l[:,1]) #Gaussian Process による学習
     model_r, likelihood_r = gp_utils.train_model(train_r[:,0], train_r[:,1])
-    gp_utils.set_eval_mode(model_l, likelihood_l, model_r, likelihood_r)
+    tp_utils.set_eval_mode(model_l, likelihood_l, model_r, likelihood_r)
     test_x = torch.tensor([[v*dt*0.001]])
     mu_l, sigma_l = gp_utils.predict_with_model(model_l, likelihood_l, test_x)
     mu_r, sigma_r = gp_utils.predict_with_model(model_r, likelihood_r, test_x)
