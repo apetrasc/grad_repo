@@ -41,7 +41,7 @@ with open('init.json', 'r') as f:
 ax1 = None
 dt = 300
 fig1, ax1 = plt.subplots()
-#fig2, ax2 = plt.subplots()
+fig2, ax2 = plt.subplots()
 seed = config["seed"] 
 v = config["v"]
 cum_dev = config["cum_dev"]
@@ -51,12 +51,15 @@ xdata, ydata = config["xdata"], config["ydata"]  #初期値
 square_size=config["square_size"] #車を模した長方形のサイズ
 prob_mask =config["prob_mask"] #残るデータの割合
 spec = config["spec"] #Lidarセンサの測定可能距離
+N=50
+global omega_data
+omega_data =[]
 def init():
-    line.set_data([0], [0])
-    return line,
+    line1.set_data([0], [0])
+    return line1,ax2
 # アニメーションを更新する関数
-def update(num,v, xdata, ydata, line):
-    global theta,dt,seed,prob_mask,cum_dev,ax1,transformer,omega
+def update(num,v, xdata, ydata, line1,line2):
+    global theta,dt,seed,prob_mask,cum_dev,ax1,transformer,omega,omega_data
     ax1.clear()
     ax1.set_xlim(-10, 15)
     ax1.set_ylim(-10, 15)
@@ -85,7 +88,7 @@ def update(num,v, xdata, ydata, line):
     ydata.append(next_y)
     omega = (1/(dt*0.001))* math.atan((mu_l+mu_r)/(2*v*dt*0.001))
     theta += omega*dt*0.001
-    
+    omega_data.append(omega)
     train_l_global = transformer.to_global_frame(train_l)
     train_r_global = transformer.to_global_frame(train_r)
     ax1.plot(train_l_global[:, 0], train_l_global[:, 1], 'y*',label='train data (left)')
@@ -94,14 +97,22 @@ def update(num,v, xdata, ydata, line):
     ax1.plot(xdata, ydata, 'k-', label='trajectory')
     #plot_regression_function(transformer,ax1, test,color='g',label='regression')
     ax1.legend()
+    ax2.clear()
+    time_steps = list(range(len(omega_data)))
+    #print(time_steps)
+    ax2.plot(time_steps,omega_data, 'g-')
+    ax2.set_title('Omega over Time')
+    ax2.set_xlabel('Time step')
+    ax2.set_ylabel('Omega')
+    ax2.set_xlim(0,len(omega_data)-1)
     cum_dev += Measurement.cal_dev(v, dt, omega)
     #print("Average deviation from center:", cum_dev)
+    return line1,line2
 
-    return line,
-
-line, = ax1.plot([0], [0], 'ro', markersize=1)
-
-ani = animation.FuncAnimation(fig1, update, frames=range(100), fargs=[v, xdata, ydata, line], 
+line1, = ax1.plot([0], [0], 'ro', markersize=1)
+line2, = ax2.plot([0], [0], 'go', markersize=1)
+#fig2.add_subplot(122)
+ani = animation.FuncAnimation(fig1, update, frames=range(N), fargs=[v, xdata, ydata, line1,line2], 
                               init_func=init, blit=False, repeat=False, interval=dt)
 
 plt.show()
